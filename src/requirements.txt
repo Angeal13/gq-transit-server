@@ -1,0 +1,7 @@
+flask==3.0.3
+mariadb==1.1.10
+requests==2.31.0
+pytz==2024.1
+gunicorn==22.0.0
+africastalking==1.2.3
+schedule==1.2.2
