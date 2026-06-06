@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bioko Transporte — Panel de Administración</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+header { background: #0f3460; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 14px; }
+header h1 { font-size: 20px; }
+header span { font-size: 12px; color: #adc8e0; }
+.tabs { display: flex; background: #16213e; }
+.tab { padding: 12px 22px; color: #aaa; cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; }
+.tab.active { color: #fff; border-bottom-color: #e94560; }
+.content { padding: 24px; max-width: 1100px; margin: 0 auto; }
+.panel { display: none; }
+.panel.active { display: block; }
+h2 { font-size: 16px; color: #0f3460; margin-bottom: 16px; }
+.card { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #0f3460; color: #fff; padding: 9px 12px; text-align: left; }
+td { padding: 8px 12px; border-bottom: 1px solid #e8eaf6; }
+tr:hover td { background: #f5f7ff; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+.badge-green { background: #e8f5e9; color: #2e7d32; }
+.badge-red   { background: #ffebee; color: #c62828; }
+.badge-blue  { background: #e3f2fd; color: #1565c0; }
+label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; margin-top: 12px; }
+input, select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+.btn { padding: 9px 18px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; }
+.btn-primary { background: #e94560; color: #fff; }
+.btn-primary:hover { background: #c73652; }
+.btn-secondary { background: #0f3460; color: #fff; }
+.btn-secondary:hover { background: #0a2547; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+#msg { margin-top: 10px; padding: 8px 12px; border-radius: 6px; font-size: 13px; display: none; }
+.msg-ok  { background: #e8f5e9; color: #2e7d32; }
+.msg-err { background: #ffebee; color: #c62828; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.stat { background: #fff; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.stat .val { font-size: 28px; font-weight: bold; color: #e94560; }
+.stat .lbl { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚌 Bioko Transporte</h1>
+  <span>Panel de Administración — Ayuntamiento de Malabo</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('dashboard')">Dashboard</div>
+  <div class="tab" onclick="showTab('stops')">Paradas</div>
+  <div class="tab" onclick="showTab('routes')">Rutas</div>
+  <div class="tab" onclick="showTab('buses')">Buses en vivo</div>
+</div>
+
+<div class="content">
+
+  <!-- DASHBOARD -->
+  <div id="tab-dashboard" class="panel active">
+    <div class="stat-grid">
+      <div class="stat"><div class="val" id="stat-buses">—</div><div class="lbl">Buses activos</div></div>
+      <div class="stat"><div class="val" id="stat-routes">—</div><div class="lbl">Rutas configuradas</div></div>
+      <div class="stat"><div class="val" id="stat-stops">—</div><div class="lbl">Paradas registradas</div></div>
+      <div class="stat"><div class="val" id="stat-events">—</div><div class="lbl">Eventos hoy</div></div>
+    </div>
+    <div class="card">
+      <h2>Buses activos ahora</h2>
+      <table><thead><tr><th>Bus ID</th><th>Ruta</th><th>Parada actual</th><th>Dirección</th><th>Última actualización</th></tr></thead>
+      <tbody id="live-table"><tr><td colspan="5" style="color:#aaa">Cargando...</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- STOPS -->
+  <div id="tab-stops" class="panel">
+    <div class="grid2">
+      <div class="card">
+        <h2>Agregar / Actualizar Parada</h2>
+        <label>Nombre de la parada</label><input id="s-name" placeholder="Ej: Mercado Central">
+        <label>Latitud</label><input id="s-lat" placeholder="3.750000" type="number" step="0.000001">
+        <label>Longitud</label><input id="s-lng" placeholder="8.780000" type="number" step="0.000001">
+        <br><br>
+        <button class="btn btn-primary" onclick="addStop()">Guardar parada</button>
+        <div id="stop-msg" class="msg-ok" style="display:none"></div>
+      </div>
+      <div class="card">
+        <h2>Importar desde CSV</h2>
+        <p style="font-size:13px;color:#666;margin-bottom:12px">El CSV debe tener columnas: <code>name,lat,lng</code></p>
+        <input type="file" id="csv-file" accept=".csv">
+        <br><br>
+        <button class="btn btn-secondary" onclick="importCSV()">Importar CSV</button>
+        <div id="csv-msg" style="margin-top:8px;font-size:13px;color:#2e7d32"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Paradas registradas</h2>
+      <table><thead><tr><th>Nombre</th><th>Latitud</th><th>Longitud</th></tr></thead>
+      <tbody id="stops-table"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- ROUTES -->
+  <div id="tab-routes" class="panel">
+    <div class="card">
+      <h2>Agregar / Actualizar Ruta</h2>
+      <div class="grid2">
+        <div>
+          <label>ID de ruta</label><input id="r-id" placeholder="R01">
+          <label>Cliente / Operador</label><input id="r-client" placeholder="COCIGE">
+          <label>Tipo</label>
+          <select id="r-type"><option value="1">Circular (sin retorno)</option><option value="2">Bidireccional (ida y vuelta)</option></select>
+          <label>Idioma</label>
+          <select id="r-lang"><option value="es">Español</option><option value="fr">Français</option><option value="en">English</option></select>
+        </div>
+        <div>
+          <label>Paradas (en orden, separadas por coma)</label>
+          <textarea id="r-stops" rows="8" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;resize:vertical"
+            placeholder="Mercado Central, Estadio La Paz, Hospital Regional, Aeropuerto"></textarea>
+        </div>
+      </div>
+      <br>
+      <button class="btn btn-primary" onclick="addRoute()">Guardar ruta</button>
+      <div id="route-msg" style="margin-top:8px;font-size:13px;"></div>
+    </div>
+    <div class="card">
+      <h2>Rutas configuradas</h2>
+      <table><thead><tr><th>ID</th><th>Cliente</th><th>Tipo</th><th>Idioma</th><th>Paradas</th></tr></thead>
+      <tbody id="routes-table"><tr><td colspan="5" style="color:#aaa">Cargando...</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- BUSES LIVE -->
+  <div id="tab-buses" class="panel">
+    <div class="card">
+      <h2>Posiciones en vivo <span style="font-size:12px;color:#aaa;font-weight:normal">(actualiza cada 10s)</span></h2>
+      <table><thead><tr><th>Bus ID</th><th>Ruta</th><th>Parada</th><th>Lat</th><th>Lng</th><th>Dirección</th><th>Actualizado</th><th>Estado</th></tr></thead>
+      <tbody id="buses-table"><tr><td colspan="8" style="color:#aaa">Cargando...</td></tr></tbody></table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API_KEY = ''; // Set if needed for admin calls
+
+function showTab(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'stops')   loadStops();
+  if (name === 'routes')  loadRoutes();
+  if (name === 'buses')   loadBuses();
+  if (name === 'dashboard') loadDashboard();
+}
+
+async function apiFetch(url, opts={}) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const [pos, routes, stops] = await Promise.all([
+      apiFetch('/api/positions?region=Bioko'),
+      apiFetch('/api/routes/map?region=Bioko'),
+      apiFetch('/api/stops?region=Bioko'),
+    ]);
+    document.getElementById('stat-buses').textContent  = pos.length;
+    document.getElementById('stat-routes').textContent = routes.length;
+    document.getElementById('stat-stops').textContent  = stops.length;
+
+    const tbody = document.getElementById('live-table');
+    if (!pos.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#aaa">Sin buses activos.</td></tr>'; return; }
+    tbody.innerHTML = pos.map(p => `
+      <tr>
+        <td><code>${p.bus_id}</code></td>
+        <td>${p.route_id || '—'}</td>
+        <td>${p.stop_name || '—'}</td>
+        <td>${p.direction || '—'}</td>
+        <td>${p.updated_at || '—'}</td>
+      </tr>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+// ── Stops ─────────────────────────────────────────────────────────────────────
+async function loadStops() {
+  try {
+    const stops = await apiFetch('/api/stops?region=Bioko');
+    const tbody = document.getElementById('stops-table');
+    if (!stops.length) { tbody.innerHTML = '<tr><td colspan="3" style="color:#aaa">Sin paradas.</td></tr>'; return; }
+    tbody.innerHTML = stops.map(s => `<tr><td>${s.name}</td><td>${s.lat}</td><td>${s.lng}</td></tr>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function addStop() {
+  const name = document.getElementById('s-name').value.trim();
+  const lat  = parseFloat(document.getElementById('s-lat').value);
+  const lng  = parseFloat(document.getElementById('s-lng').value);
+  const msg  = document.getElementById('stop-msg');
+  if (!name || isNaN(lat) || isNaN(lng)) { showMsg(msg, 'Completa todos los campos.', false); return; }
+  try {
+    await fetch('/admin/api/stop', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, lat, lng, region: 'Bioko'})
+    });
+    showMsg(msg, `Parada "${name}" guardada.`, true);
+    loadStops();
+  } catch(e) { showMsg(msg, 'Error: ' + e.message, false); }
+}
+
+async function importCSV() {
+  const file = document.getElementById('csv-file').files[0];
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split('\n').filter(l => l.trim());
+  const header = lines[0].toLowerCase().split(',');
+  const ni = header.indexOf('name'), lati = header.indexOf('lat'), lngi = header.indexOf('lng');
+  if (ni<0||lati<0||lngi<0) { document.getElementById('csv-msg').textContent = 'CSV must have name,lat,lng columns.'; return; }
+  let count = 0;
+  for (let i=1; i<lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 3) continue;
+    await fetch('/admin/api/stop', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name: cols[ni].trim(), lat: parseFloat(cols[lati]), lng: parseFloat(cols[lngi]), region:'Bioko'})
+    });
+    count++;
+  }
+  document.getElementById('csv-msg').textContent = `${count} paradas importadas.`;
+  loadStops();
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+async function loadRoutes() {
+  try {
+    const routes = await apiFetch('/api/routes/map?region=Bioko');
+    const tbody  = document.getElementById('routes-table');
+    if (!routes.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#aaa">Sin rutas.</td></tr>'; return; }
+    tbody.innerHTML = routes.map(r => `
+      <tr>
+        <td><b>${r.id}</b></td>
+        <td>${r.client}</td>
+        <td>${r.route_type === 1 ? 'Circular' : 'Bidireccional'}</td>
+        <td>${r.language}</td>
+        <td style="font-size:12px">${r.stops.map(s=>s.name).join(' → ')}</td>
+      </tr>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function addRoute() {
+  const data = {
+    id:       document.getElementById('r-id').value.trim(),
+    client:   document.getElementById('r-client').value.trim(),
+    type:     document.getElementById('r-type').value,
+    language: document.getElementById('r-lang').value,
+    stops:    document.getElementById('r-stops').value,
+    region:   'Bioko',
+  };
+  const msg = document.getElementById('route-msg');
+  if (!data.id || !data.stops) { msg.textContent = 'ID y paradas son obligatorios.'; msg.style.color='#c62828'; return; }
+  try {
+    const res = await fetch('/admin/api/route', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const json = await res.json();
+    msg.textContent = json.message || 'Ruta guardada.';
+    msg.style.color = res.ok ? '#2e7d32' : '#c62828';
+    loadRoutes();
+  } catch(e) { msg.textContent = 'Error: ' + e.message; msg.style.color='#c62828'; }
+}
+
+// ── Live buses ────────────────────────────────────────────────────────────────
+async function loadBuses() {
+  try {
+    const pos   = await apiFetch('/api/positions?region=Bioko');
+    const tbody = document.getElementById('buses-table');
+    const now   = Date.now();
+    if (!pos.length) { tbody.innerHTML = '<tr><td colspan="8" style="color:#aaa">Sin buses activos.</td></tr>'; return; }
+    tbody.innerHTML = pos.map(p => {
+      const age = p.updated_at ? Math.round((now - new Date(p.updated_at).getTime())/1000) : 999;
+      const badge = age < 60 ? '<span class="badge badge-green">En línea</span>' : '<span class="badge badge-red">Inactivo</span>';
+      return `<tr>
+        <td><code style="font-size:11px">${p.bus_id}</code></td>
+        <td>${p.route_id||'—'}</td>
+        <td>${p.stop_name||'—'}</td>
+        <td>${p.lat||'—'}</td>
+        <td>${p.lng||'—'}</td>
+        <td>${p.direction||'—'}</td>
+        <td style="font-size:11px">${p.updated_at||'—'}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.className = ok ? 'msg-ok' : 'msg-err';
+  el.style.display = 'block';
+  setTimeout(() => el.style.display='none', 4000);
+}
+
+// Init
+loadDashboard();
+setInterval(() => {
+  const active = document.querySelector('.panel.active');
+  if (active && active.id === 'tab-dashboard') loadDashboard();
+  if (active && active.id === 'tab-buses') loadBuses();
+}, 10000);
+</script>
+</body>
+</html>

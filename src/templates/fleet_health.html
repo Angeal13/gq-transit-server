@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bioko Transporte — Salud de la Flota</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;gap:14px}
+header h1{font-size:17px;color:#f0f6fc}
+header span{font-size:12px;color:#8b949e}
+.pulse{width:10px;height:10px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.main{padding:20px;max-width:1400px;margin:0 auto}
+.section-title{font-size:13px;color:#8b949e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;margin-top:24px}
+.fleet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px}
+.bus-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;cursor:pointer;transition:border-color .2s}
+.bus-card:hover{border-color:#388bfd}
+.bus-card.critical{border-color:#f85149}
+.bus-card.warning{border-color:#d29922}
+.bus-card.selected{border-color:#388bfd;background:#1c2128}
+.bus-id{font-size:11px;color:#8b949e;font-family:monospace;margin-bottom:6px}
+.bus-score-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.score-ring{width:44px;height:44px;flex-shrink:0}
+.score-num{font-size:22px;font-weight:700}
+.score-label{font-size:11px;color:#8b949e}
+.trend-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-ok{background:#1f4a27;color:#3fb950}
+.badge-warning{background:#4a3520;color:#d29922}
+.badge-critical{background:#4a1515;color:#f85149}
+.score-bar{height:4px;border-radius:2px;background:#21262d;margin-top:8px}
+.score-fill{height:4px;border-radius:2px;transition:width .5s}
+.detail-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:20px;display:none}
+.detail-panel.visible{display:block}
+.detail-title{font-size:15px;font-weight:600;color:#f0f6fc;margin-bottom:14px}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:16px}
+.chart-card{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:12px}
+.chart-label{font-size:11px;color:#8b949e;margin-bottom:8px}
+.chart-val{font-size:20px;font-weight:700;color:#f0f6fc}
+.chart-unit{font-size:11px;color:#8b949e;margin-left:4px}
+canvas{display:block;max-height:70px}
+.alerts-table{width:100%;border-collapse:collapse;font-size:12px}
+.alerts-table th{background:#21262d;color:#8b949e;padding:8px 10px;text-align:left;font-weight:600}
+.alerts-table td{padding:7px 10px;border-bottom:1px solid #21262d;color:#e6edf3}
+.alerts-table tr:last-child td{border-bottom:none}
+.sev-critical{color:#f85149;font-weight:700}
+.sev-warning{color:#d29922;font-weight:700}
+.sev-ok{color:#3fb950}
+.no-data{color:#8b949e;font-size:13px;padding:20px;text-align:center}
+.refresh-info{font-size:11px;color:#8b949e;text-align:right;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="pulse"></div>
+  <h1>🔧 Salud de la Flota — Bioko Transporte</h1>
+  <span id="hdr-time">Cargando...</span>
+</header>
+
+<div class="main">
+  <div class="section-title">Estado de buses — click para ver detalles</div>
+  <div class="fleet-grid" id="fleet-grid">
+    <div class="no-data">Cargando datos de flota...</div>
+  </div>
+
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-title" id="detail-title">Bus seleccionado</div>
+    <div class="charts-grid" id="charts-grid"></div>
+    <div class="section-title" style="margin-top:0">Últimas alertas</div>
+    <table class="alerts-table">
+      <thead><tr><th>Hora</th><th>Tipo</th><th>Severidad</th><th>Sensor</th><th>Mensaje</th></tr></thead>
+      <tbody id="alert-tbody"></tbody>
+    </table>
+    <div class="refresh-info" id="detail-refresh"></div>
+  </div>
+
+  <div class="section-title">Alertas recientes — toda la flota</div>
+  <table class="alerts-table">
+    <thead><tr><th>Hora</th><th>Bus</th><th>Severidad</th><th>Sensor</th><th>Mensaje</th></tr></thead>
+    <tbody id="fleet-alert-tbody"><tr><td colspan="5" class="no-data">Cargando...</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+const CHARTS = {};
+let selectedBus = null;
+
+function scoreColor(s) {
+  if (s >= 80) return '#3fb950';
+  if (s >= 50) return '#d29922';
+  return '#f85149';
+}
+
+function badgeClass(sev) {
+  if (!sev || sev === 'ok' || sev === 'stable') return 'badge-ok';
+  if (sev === 'warning') return 'badge-warning';
+  return 'badge-critical';
+}
+
+function cardClass(sev) {
+  if (!sev || sev === 'ok' || sev === 'stable') return '';
+  return sev;
+}
+
+function shortId(id) {
+  return String(id).slice(-12);
+}
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  const s = Math.round((Date.now() - d.getTime()) / 1000);
+  if (s < 60)  return `${s}s`;
+  if (s < 3600) return `${Math.round(s/60)}m`;
+  return `${Math.round(s/3600)}h`;
+}
+
+function ring(score) {
+  const c = scoreColor(score);
+  const pct = score / 100;
+  const r = 18, cx = 22, cy = 22, circ = 2 * Math.PI * r;
+  const dash = circ * pct, gap = circ - dash;
+  return `<svg class="score-ring" viewBox="0 0 44 44">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#21262d" stroke-width="4"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="4"
+      stroke-dasharray="${dash.toFixed(1)} ${gap.toFixed(1)}"
+      stroke-dashoffset="${circ * 0.25}" stroke-linecap="round"/>
+    <text x="${cx}" y="${cy+1}" text-anchor="middle" dominant-baseline="central"
+      font-size="11" font-weight="700" fill="${c}">${score}</text>
+  </svg>`;
+}
+
+async function loadFleet() {
+  try {
+    const r = await fetch('/api/engine/fleet');
+    const buses = await r.json();
+    const grid = document.getElementById('fleet-grid');
+    if (!buses.length) { grid.innerHTML = '<div class="no-data">Sin buses registrados con datos de motor.</div>'; return; }
+
+    grid.innerHTML = buses.map(b => `
+      <div class="bus-card ${cardClass(b.last_alert)} ${selectedBus===b.bus_id?'selected':''}"
+           onclick="selectBus('${b.bus_id}')">
+        <div class="bus-id">${shortId(b.bus_id)}</div>
+        <div class="bus-score-row">
+          ${ring(b.score)}
+          <div>
+            <div class="score-num" style="color:${scoreColor(b.score)}">${b.score}</div>
+            <div class="score-label">Salud</div>
+          </div>
+        </div>
+        <span class="trend-badge ${badgeClass(b.last_alert)}">${b.last_alert||'ok'}</span>
+        <div class="score-bar"><div class="score-fill" style="width:${b.score}%;background:${scoreColor(b.score)}"></div></div>
+        <div style="font-size:10px;color:#8b949e;margin-top:6px">Act. ${timeAgo(b.updated_at)}</div>
+      </div>`).join('');
+
+    document.getElementById('hdr-time').textContent =
+      `Actualizado: ${new Date().toLocaleTimeString('es-GQ')}`;
+  } catch(e) { console.error('Fleet load failed', e); }
+}
+
+async function selectBus(busId) {
+  selectedBus = busId;
+  document.querySelectorAll('.bus-card').forEach(c => c.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('visible');
+  document.getElementById('detail-title').textContent = `Bus: ${shortId(busId)}`;
+  document.getElementById('charts-grid').innerHTML = '<div class="no-data">Cargando sparklines...</div>';
+  document.getElementById('alert-tbody').innerHTML = '';
+
+  await loadSparklines(busId);
+  await loadBusAlerts(busId);
+}
+
+const CHART_CFG = {
+  rpm:              { label:'RPM',         unit:'rpm',  color:'#388bfd', min:0, max:5000 },
+  coolant_temp_c:   { label:'Temp. motor', unit:'°C',   color:'#f85149', min:60,max:120 },
+  oil_pressure_psi: { label:'Presión aceite',unit:'PSI',color:'#3fb950', min:0, max:80 },
+  battery_v:        { label:'Batería',     unit:'V',    color:'#d29922', min:10,max:16 },
+  engine_load_pct:  { label:'Carga motor', unit:'%',    color:'#bc8cff', min:0, max:100 },
+};
+
+async function loadSparklines(busId) {
+  try {
+    const r = await fetch(`/api/engine/bus/${encodeURIComponent(busId)}/sparklines?minutes=30`);
+    const data = await r.json();
+    const grid = document.getElementById('charts-grid');
+    const ts   = data.timestamps || [];
+
+    if (!ts.length) {
+      grid.innerHTML = '<div class="no-data">Sin lecturas en los últimos 30 minutos.</div>';
+      return;
+    }
+
+    const labels = ts.map(t => t.split('T')[1]?.slice(0,5) || t.slice(-5));
+    grid.innerHTML = Object.entries(CHART_CFG).map(([key, cfg]) => {
+      const vals = data[key] || [];
+      const last = vals.length ? vals[vals.length-1] : null;
+      const lastStr = last !== null ? last.toFixed(key==='rpm'?0:1) : '—';
+      return `<div class="chart-card">
+        <div class="chart-label">${cfg.label}</div>
+        <div><span class="chart-val" style="color:${cfg.color}">${lastStr}</span>
+             <span class="chart-unit">${cfg.unit}</span></div>
+        <canvas id="chart-${key}" height="60"></canvas>
+      </div>`;
+    }).join('');
+
+    Object.entries(CHART_CFG).forEach(([key, cfg]) => {
+      const el = document.getElementById(`chart-${key}`);
+      if (!el) return;
+      if (CHARTS[key]) { CHARTS[key].destroy(); }
+      const vals = data[key] || [];
+      CHARTS[key] = new Chart(el, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: vals,
+            borderColor: cfg.color,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: true,
+            backgroundColor: cfg.color + '18',
+            tension: 0.3,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: { display: false },
+            y: { display: false, min: cfg.min, max: cfg.max },
+          }
+        }
+      });
+    });
+
+    document.getElementById('detail-refresh').textContent =
+      `Últimos 30 min — ${ts.length} lecturas`;
+
+  } catch(e) { console.error('Sparklines error', e); }
+}
+
+async function loadBusAlerts(busId) {
+  try {
+    const r = await fetch(`/api/engine/bus/${encodeURIComponent(busId)}/alerts`);
+    const alerts = await r.json();
+    const tbody = document.getElementById('alert-tbody');
+    if (!alerts.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Sin alertas recientes.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = alerts.slice(0,20).map(a => `<tr>
+      <td style="white-space:nowrap">${timeAgo(a.created_at)}</td>
+      <td>${a.alert_type||'—'}</td>
+      <td class="sev-${a.severity}">${a.severity}</td>
+      <td>${(a.sensor||'').replace(/_/g,' ')}</td>
+      <td style="max-width:300px">${a.message||''}</td>
+    </tr>`).join('');
+  } catch(e) { console.error('Bus alerts error', e); }
+}
+
+async function loadFleetAlerts() {
+  try {
+    const r = await fetch('/api/engine/alerts?limit=30');
+    const alerts = await r.json();
+    const tbody = document.getElementById('fleet-alert-tbody');
+    if (!alerts.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">Sin alertas recientes.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = alerts.map(a => `<tr>
+      <td style="white-space:nowrap">${timeAgo(a.created_at)}</td>
+      <td style="font-family:monospace;font-size:11px">${shortId(a.bus_id)}</td>
+      <td class="sev-${a.severity}">${a.severity}</td>
+      <td>${(a.sensor||'').replace(/_/g,' ')}</td>
+      <td style="max-width:350px">${a.message||''}</td>
+    </tr>`).join('');
+  } catch(e) { console.error('Fleet alerts error', e); }
+}
+
+async function refresh() {
+  await loadFleet();
+  await loadFleetAlerts();
+  if (selectedBus) {
+    await loadSparklines(selectedBus);
+    await loadBusAlerts(selectedBus);
+  }
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>
